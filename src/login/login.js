@@ -13,6 +13,7 @@ import "react-toastify/dist/ReactToastify.css";
 import "./login.css";
 import logo from "../assets/images/company-logo.jpg"; // Adjust the path as necessary
 import googlelogo from "../assets/icons/googlelogo.svg"; // Adjust the path as necessary
+import LoaderC from "../utills/loaderC";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -22,6 +23,7 @@ const Login = () => {
   const [captchaValue, setCaptchaValue] = useState("");
   const [captchaQuestion, setCaptchaQuestion] = useState("");
   const [captchaAnswer, setCaptchaAnswer] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -68,21 +70,27 @@ const Login = () => {
       return;
     }
 
+    setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
       navigate("/home");
     } catch (error) {
       notifyError(error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleGoogleLogin = async () => {
     const provider = new GoogleAuthProvider();
+    setLoading(true);
     try {
       await signInWithPopup(auth, provider);
       navigate("/home");
     } catch (error) {
       notifyError(error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -94,11 +102,14 @@ const Login = () => {
       return;
     }
 
+    setLoading(true);
     try {
       await sendPasswordResetEmail(auth, email);
       notifySuccess("Check your email for the password reset link.");
     } catch (error) {
       notifyError(error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -125,157 +136,167 @@ const Login = () => {
       return;
     }
 
+    setLoading(true);
     try {
       await createUserWithEmailAndPassword(auth, email, password);
       navigate("/home");
     } catch (error) {
       notifyError(error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="container">
-      <ToastContainer />
-      <div className="card">
-        <div className="logo-container">
-          <img src={logo} alt="Company Logo" className="logo" />
-          <h2 className="tagline">Billing made Faster and Easier</h2>
+    <>
+      {loading ? (
+        <LoaderC />
+      ) : (
+        <div className="container">
+          <ToastContainer />
+
+          <div className="card">
+            <div className="logo-container">
+              <img src={logo} alt="Company Logo" className="logo" />
+              <h2 className="tagline">Billing made Faster and Easier</h2>
+            </div>
+            <h3 className="card-title">
+              {formType === "login" && "Welcome Back"}
+              {formType === "signup" && "Sign Up"}
+              {formType === "forgotPassword" && "Reset Password"}
+            </h3>
+            {formType === "login" && (
+              <form className="form" onSubmit={handleLogin}>
+                <input
+                  type="email"
+                  placeholder="Email"
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="input"
+                />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="input"
+                />
+                <div className="captcha">
+                  <label>{captchaQuestion} = </label>
+                  <input
+                    type="text"
+                    placeholder="Answer"
+                    onChange={(e) => setCaptchaAnswer(e.target.value)}
+                    required
+                    className="input"
+                  />
+                </div>
+                <button type="submit" className="button">
+                  Log In
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGoogleLogin}
+                  className="button d-flex align-items-center justify-content-center"
+                >
+                  {" "}
+                  Log In with Google
+                  <img
+                    src={googlelogo}
+                    alt="Google Logo"
+                    className="google-logo-signin ms-3"
+                  />
+                </button>
+              </form>
+            )}
+            {formType === "signup" && (
+              <form className="form" onSubmit={handleSignup}>
+                <input
+                  type="email"
+                  placeholder="Email"
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="input"
+                />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="input"
+                />
+                <input
+                  type="password"
+                  placeholder="Confirm Password"
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  className="input"
+                />
+                <div className="captcha">
+                  <label className="">{captchaQuestion} = </label>
+                  <input
+                    type="text"
+                    placeholder="Answer"
+                    onChange={(e) => setCaptchaAnswer(e.target.value)}
+                    required
+                    className="input"
+                  />
+                </div>
+                <button type="submit" className="button">
+                  Sign Up
+                </button>
+              </form>
+            )}
+            {formType === "forgotPassword" && (
+              <form className="form" onSubmit={handleResetPassword}>
+                <input
+                  type="email"
+                  placeholder="Enter your email"
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="input"
+                />
+                <button type="submit" className="button">
+                  Send Reset Link
+                </button>
+              </form>
+            )}
+            {formType === "login" && (
+              <p className="text-center mt-3">
+                Don't have an account?{" "}
+                <button
+                  className="link-button"
+                  onClick={() => setFormType("signup")}
+                >
+                  Sign Up
+                </button>
+              </p>
+            )}
+            {formType === "login" && (
+              <p className="text-center">
+                Forgot your password?{" "}
+                <button
+                  className="link-button"
+                  onClick={() => setFormType("forgotPassword")}
+                >
+                  Reset it here
+                </button>
+              </p>
+            )}
+            {(formType === "signup" || formType === "forgotPassword") && (
+              <p className="text-center mt-3">
+                <button
+                  className="link-button"
+                  onClick={() => setFormType("login")}
+                >
+                  Back to Login
+                </button>
+              </p>
+            )}
+          </div>
         </div>
-        <h3 className="card-title">
-          {formType === "login" && "Welcome Back"}
-          {formType === "signup" && "Sign Up"}
-          {formType === "forgotPassword" && "Reset Password"}
-        </h3>
-        {formType === "login" && (
-          <form className="form" onSubmit={handleLogin}>
-            <input
-              type="email"
-              placeholder="Email"
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="input"
-            />
-            <input
-              type="password"
-              placeholder="Password"
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="input"
-            />
-            <div className="captcha">
-              <label>{captchaQuestion} = </label>
-              <input
-                type="text"
-                placeholder="Answer"
-                onChange={(e) => setCaptchaAnswer(e.target.value)}
-                required
-                className="input"
-              />
-            </div>
-            <button type="submit" className="button">
-              Log In
-            </button>
-            <button
-              type="button"
-              onClick={handleGoogleLogin}
-              className="button d-flex align-items-center justify-content-center"
-            >
-              {" "}
-              Log In with Google
-              <img
-                src={googlelogo}
-                alt="Google Logo"
-                className="google-logo-signin ms-3"
-              />
-            </button>
-          </form>
-        )}
-        {formType === "signup" && (
-          <form className="form" onSubmit={handleSignup}>
-            <input
-              type="email"
-              placeholder="Email"
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="input"
-            />
-            <input
-              type="password"
-              placeholder="Password"
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="input"
-            />
-            <input
-              type="password"
-              placeholder="Confirm Password"
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-              className="input"
-            />
-            <div className="captcha">
-              <label className="">{captchaQuestion} = </label>
-              <input
-                type="text"
-                placeholder="Answer"
-                onChange={(e) => setCaptchaAnswer(e.target.value)}
-                required
-                className="input"
-              />
-            </div>
-            <button type="submit" className="button">
-              Sign Up
-            </button>
-          </form>
-        )}
-        {formType === "forgotPassword" && (
-          <form className="form" onSubmit={handleResetPassword}>
-            <input
-              type="email"
-              placeholder="Enter your email"
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="input"
-            />
-            <button type="submit" className="button">
-              Send Reset Link
-            </button>
-          </form>
-        )}
-        {formType === "login" && (
-          <p className="text-center mt-3">
-            Don't have an account?{" "}
-            <button
-              className="link-button"
-              onClick={() => setFormType("signup")}
-            >
-              Sign Up
-            </button>
-          </p>
-        )}
-        {formType === "login" && (
-          <p className="text-center">
-            Forgot your password?{" "}
-            <button
-              className="link-button"
-              onClick={() => setFormType("forgotPassword")}
-            >
-              Reset it here
-            </button>
-          </p>
-        )}
-        {(formType === "signup" || formType === "forgotPassword") && (
-          <p className="text-center mt-3">
-            <button
-              className="link-button"
-              onClick={() => setFormType("login")}
-            >
-              Back to Login
-            </button>
-          </p>
-        )}
-      </div>
-    </div>
+      )}
+    </>
   );
 };
 
