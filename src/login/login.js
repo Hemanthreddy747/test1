@@ -1,27 +1,78 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
+  sendPasswordResetEmail,
+  createUserWithEmailAndPassword,
 } from "firebase/auth";
 import { auth } from "../firebase/firebase"; // Adjust the path as necessary
 import { useNavigate } from "react-router-dom";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import "./login.css";
+import logo from "../assets/images/company-logo.jpg"; // Adjust the path as necessary
+import googlelogo from "../assets/icons/googlelogo.svg"; // Adjust the path as necessary
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [formType, setFormType] = useState("login"); // 'login', 'signup', 'forgotPassword'
+  const [captchaValue, setCaptchaValue] = useState("");
+  const [captchaQuestion, setCaptchaQuestion] = useState("");
+  const [captchaAnswer, setCaptchaAnswer] = useState("");
   const navigate = useNavigate();
+
+  useEffect(() => {
+    generateCaptcha();
+  }, [formType]);
+
+  const notifyError = (message) => toast.error(message);
+  const notifySuccess = (message) => toast.success(message);
+
+  const validateEmail = (email) => {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(String(email).toLowerCase());
+  };
+
+  const validatePassword = (password) => {
+    return password.length >= 6;
+  };
+
+  const generateCaptcha = () => {
+    const num1 = Math.floor(Math.random() * 10);
+    const num2 = Math.floor(Math.random() * 10);
+    const isAddition = Math.random() > 0.5;
+    const question = isAddition ? `${num1} + ${num2}` : `${num1} - ${num2}`;
+    const answer = isAddition ? num1 + num2 : num1 - num2;
+    setCaptchaQuestion(question);
+    setCaptchaValue(answer.toString());
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    setError("");
+
+    if (!validateEmail(email)) {
+      notifyError("Please enter a valid email address.");
+      return;
+    }
+
+    if (!validatePassword(password)) {
+      notifyError("Password must be at least 6 characters long.");
+      return;
+    }
+
+    if (captchaAnswer !== captchaValue) {
+      notifyError("Incorrect CAPTCHA answer.");
+      return;
+    }
 
     try {
       await signInWithEmailAndPassword(auth, email, password);
       navigate("/home");
     } catch (error) {
-      setError(error.message);
+      notifyError(error.message);
     }
   };
 
@@ -31,35 +82,199 @@ const Login = () => {
       await signInWithPopup(auth, provider);
       navigate("/home");
     } catch (error) {
-      setError(error.message);
+      notifyError(error.message);
+    }
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+
+    if (!validateEmail(email)) {
+      notifyError("Please enter a valid email address.");
+      return;
+    }
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+      notifySuccess("Check your email for the password reset link.");
+    } catch (error) {
+      notifyError(error.message);
+    }
+  };
+
+  const handleSignup = async (e) => {
+    e.preventDefault();
+
+    if (!validateEmail(email)) {
+      notifyError("Please enter a valid email address.");
+      return;
+    }
+
+    if (!validatePassword(password)) {
+      notifyError("Password must be at least 6 characters long.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      notifyError("Passwords do not match.");
+      return;
+    }
+
+    if (captchaAnswer !== captchaValue) {
+      notifyError("Incorrect CAPTCHA answer.");
+      return;
+    }
+
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+      navigate("/home");
+    } catch (error) {
+      notifyError(error.message);
     }
   };
 
   return (
-    <div>
-      <form onSubmit={handleLogin}>
-        <h2>Log In</h2>
-        <input
-          type="email"
-          placeholder="Email"
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        <button type="submit">Log In</button>
-        <button type="button" onClick={handleGoogleLogin}>
-          Log In with Google
-        </button>
-        {error && <p style={{ color: "red" }}>{error}</p>}
-      </form>
-      <p>
-        Don't have an account? <a href="/signup">Sign Up</a>
-      </p>
+    <div className="container">
+      <ToastContainer />
+      <div className="card">
+        <div className="logo-container">
+          <img src={logo} alt="Company Logo" className="logo" />
+          <h2 className="tagline">Billing made Faster and Easier</h2>
+        </div>
+        <h3 className="card-title">
+          {formType === "login" && "Welcome Back"}
+          {formType === "signup" && "Sign Up"}
+          {formType === "forgotPassword" && "Reset Password"}
+        </h3>
+        {formType === "login" && (
+          <form className="form" onSubmit={handleLogin}>
+            <input
+              type="email"
+              placeholder="Email"
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="input"
+            />
+            <input
+              type="password"
+              placeholder="Password"
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="input"
+            />
+            <div className="captcha">
+              <label>{captchaQuestion} = </label>
+              <input
+                type="text"
+                placeholder="Answer"
+                onChange={(e) => setCaptchaAnswer(e.target.value)}
+                required
+                className="input"
+              />
+            </div>
+            <button type="submit" className="button">
+              Log In
+            </button>
+            <button
+              type="button"
+              onClick={handleGoogleLogin}
+              className="button d-flex align-items-center justify-content-center"
+            >
+              {" "}
+              Log In with Google
+              <img
+                src={googlelogo}
+                alt="Google Logo"
+                className="google-logo-signin ms-3"
+              />
+            </button>
+          </form>
+        )}
+        {formType === "signup" && (
+          <form className="form" onSubmit={handleSignup}>
+            <input
+              type="email"
+              placeholder="Email"
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="input"
+            />
+            <input
+              type="password"
+              placeholder="Password"
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="input"
+            />
+            <input
+              type="password"
+              placeholder="Confirm Password"
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              className="input"
+            />
+            <div className="captcha">
+              <label className="">{captchaQuestion} = </label>
+              <input
+                type="text"
+                placeholder="Answer"
+                onChange={(e) => setCaptchaAnswer(e.target.value)}
+                required
+                className="input"
+              />
+            </div>
+            <button type="submit" className="button">
+              Sign Up
+            </button>
+          </form>
+        )}
+        {formType === "forgotPassword" && (
+          <form className="form" onSubmit={handleResetPassword}>
+            <input
+              type="email"
+              placeholder="Enter your email"
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="input"
+            />
+            <button type="submit" className="button">
+              Send Reset Link
+            </button>
+          </form>
+        )}
+        {formType === "login" && (
+          <p className="text-center mt-3">
+            Don't have an account?{" "}
+            <button
+              className="link-button"
+              onClick={() => setFormType("signup")}
+            >
+              Sign Up
+            </button>
+          </p>
+        )}
+        {formType === "login" && (
+          <p className="text-center">
+            Forgot your password?{" "}
+            <button
+              className="link-button"
+              onClick={() => setFormType("forgotPassword")}
+            >
+              Reset it here
+            </button>
+          </p>
+        )}
+        {(formType === "signup" || formType === "forgotPassword") && (
+          <p className="text-center mt-3">
+            <button
+              className="link-button"
+              onClick={() => setFormType("login")}
+            >
+              Back to Login
+            </button>
+          </p>
+        )}
+      </div>
     </div>
   );
 };
