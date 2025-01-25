@@ -172,7 +172,7 @@ const Stock = () => {
       );
     }
 
-    // Update the existing product in Firestore
+    // Update the existing product in Firestore.
     await setDoc(
       doc(db, "users", userUID, "products", currentProductId),
       updatedData
