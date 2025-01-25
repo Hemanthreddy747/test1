@@ -33,7 +33,7 @@ const LoaderC = () => {
   return (
     <div style={loaderStyles}>
       <div style={spinnerStyles}></div>
-      <div style={textStyles}>Data loading...</div> {/* Loading text */}
+      {/* <div style={textStyles}>Data loading...</div> */}
       <style>
         {`
           @keyframes spin {

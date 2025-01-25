@@ -291,19 +291,19 @@ const Stock = () => {
       productName: "",
       productDesc: "",
       brand: "",
+      category: "",
       bulkPrice: "",
       retailPrice: "",
       wholesalePrice: "",
       stockQty: "",
       minStock: "",
       offerValue: "",
-      category: "",
       rank: "",
-      productImage: null,
       purchasePrice: "",
       mrp: "",
-      wholesaleSellPrice: "",
+      // wholesaleSellPrice: "",
       archived: false,
+      productImage: null,
     });
 
     setShowAddModal(false);
@@ -317,16 +317,14 @@ const Stock = () => {
       characters.charAt(Math.floor(Math.random() * characters.length))
     ).join("");
   };
-
   const openEditModal = (product) => {
     setCurrentProductId(product.id);
     setFormData({
       ...product,
-      productImage: null,
+      productImage: product.productImage, // Keep the existing image URL
     });
     setShowEditModal(true);
   };
-
   const handleSearchAndSort = () => {
     let allProducts = [...products];
 
@@ -477,6 +475,58 @@ const Stock = () => {
                       </Col>
                     ) : null
                   )}
+
+                  {/* {Object.keys(formData).map((key) =>
+                    // Skip id, productId, productImage, and archived fields
+                    !["id", "productId", "productImage", "archived"].includes(
+                      key
+                    ) ? (
+                      <Col xs={6} key={key}>
+                        <Form.Group controlId={`edit${key}`}>
+                          <Form.Label>
+                            {key
+                              .replace(/([A-Z])/g, " $1")
+                              .replace(/^./, (str) => str.toUpperCase())}
+                          </Form.Label>
+                          <Form.Control
+                            type={
+                              key.includes("Price") || key.includes("Qty")
+                                ? "number"
+                                : "text"
+                            }
+                            name={key}
+                            value={formData[key]}
+                            onChange={handleInputChange}
+                            required
+                          />
+                        </Form.Group>
+                      </Col>
+                    ) : key === "productImage" ? (
+                      <Col xs={12} key={key}>
+                        <Form.Group controlId={`edit${key}`}>
+                          <Form.Label>Product Image</Form.Label>
+                          {formData.productImage && (
+                            <div className="mb-2">
+                              <img
+                                src={formData.productImage}
+                                alt="Current product"
+                                style={{ maxWidth: "100px", height: "auto" }}
+                              />
+                            </div>
+                          )}
+                          <Form.Control
+                            type="file"
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                productImage: e.target.files[0],
+                              })
+                            }
+                          />
+                        </Form.Group>
+                      </Col>
+                    ) : null
+                  )} */}
                 </Row>
                 <div className="d-flex justify-content-between mt-3">
                   <Button variant="primary" type="submit">
@@ -516,13 +566,13 @@ const Stock = () => {
                 <div className="details">
                   <div className="p-2">
                     <p>
-                      QTY: <span>{product.stockQty}</span>
+                      Qty: <span>{product.stockQty}</span>
                     </p>
                     <p>
                       <span>{product.productName}</span>
                     </p>
                     <p className="mt-4">MRP: {product.mrp}</p>
-                    <p>Wholesale Price: {product.wholesalePrice}</p>
+                    <p>Bulk Price: {product.wholesalePrice}</p>
                   </div>
                 </div>
               </div>
