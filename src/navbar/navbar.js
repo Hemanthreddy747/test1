@@ -18,7 +18,7 @@ const Navbar = () => {
   };
 
   return (
-    <div className="navbarr">
+    <div className="navbarr user-select-none">
       <div
         className={activeTab === "home" ? "active" : ""}
         onClick={() => handleTabClick("home")}

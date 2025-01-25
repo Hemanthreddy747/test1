@@ -31,6 +31,8 @@
   width: 100%;
   animation: fadeIn var(--transition-duration) ease-in-out;
   position: relative;
+  
+  
 }
 
 .logo-container {
@@ -48,7 +50,7 @@
   top: -75px;
   left: 50%;
   transform: translateX(-50%);
-  /* border: 5px solid white; */
+  border: 2px solid rgb(180, 180, 180);
   /* box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); */
 }
 
@@ -104,6 +106,7 @@
     transform var(--transition-duration);
   font-size: var(--font-size-medium);
   font-weight: var(--font-weight-bold);
+  /* opacity: .8; */
 }
 
 .button:hover {

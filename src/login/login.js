@@ -72,8 +72,15 @@ const Login = () => {
 
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      navigate("/billing");
+      const userCredential = await signInWithEmailAndPassword(
+        auth,
+        email,
+        password
+      );
+      const user = userCredential.user;
+      console.log("User UID:", user.uid);
+      notifySuccess("Login successful");
+      navigate("/stock"); // Adjust the path as necessary
     } catch (error) {
       notifyError(error.message);
     } finally {
@@ -84,14 +91,16 @@ const Login = () => {
   const handleGoogleLogin = async () => {
     const provider = new GoogleAuthProvider();
     setLoading(true);
-    try {
-      await signInWithPopup(auth, provider);
-      navigate("/billing");
-    } catch (error) {
-      notifyError(error.message);
-    } finally {
-      setLoading(false);
-    }
+   try {
+     const userCredential = await signInWithPopup(auth, provider);
+     const user = userCredential.user;
+     console.log("User UID:", user.uid);
+     navigate("/stock");
+   } catch (error) {
+     notifyError(error.message);
+   } finally {
+     setLoading(false);
+   }
   };
 
   const handleResetPassword = async (e) => {

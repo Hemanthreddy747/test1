@@ -1,295 +1,412 @@
 import React, { useState, useEffect } from "react";
-import { getAuth } from "firebase/auth";
+import { Button, Modal, Form, Row, Col } from "react-bootstrap";
+import { db } from "../firebase/firebase"; // Ensure this is correctly pointing to your firebase config
 import {
-  getFirestore,
   collection,
-  addDoc,
   getDocs,
+  addDoc,
+  setDoc,
   doc,
-  deleteDoc,
-  updateDoc,
+  query,
+  where,
 } from "firebase/firestore";
-import { Modal, Button } from "react-bootstrap";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
 import imageCompression from "browser-image-compression";
-import "./stock.css";
-import "bootstrap/dist/css/bootstrap.min.css";
 
 const Stock = () => {
-  const [productName, setProductName] = useState("");
-  const [productImage, setProductImage] = useState("");
-  const [totalStock, setTotalStock] = useState("");
-  const [minStock, setMinStock] = useState("");
-  const [purchasePrice, setPurchasePrice] = useState("");
-  const [mrp, setMrp] = useState("");
-  const [wholesaleSellPrice, setWholesaleSellPrice] = useState("");
+  const [userUID, setUserUID] = useState(null);
   const [products, setProducts] = useState([]);
-  const [editingProduct, setEditingProduct] = useState(null);
-  const [showModal, setShowModal] = useState(false);
-  const auth = getAuth();
-  const db = getFirestore();
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [formData, setFormData] = useState({
+    productName: "",
+    productDesc: "",
+    brand: "",
+    bulkPrice: "",
+    retailPrice: "",
+    wholesalePrice: "",
+    stockQty: "",
+    minStock: "",
+    offerValue: "",
+    category: "",
+    rank: "",
+    productImage: null,
+    purchasePrice: "",
+    mrp: "",
+    wholesaleSellPrice: "",
+  });
+
+  const [currentProductId, setCurrentProductId] = useState(null); // Track the current product ID for editing
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      const querySnapshot = await getDocs(collection(db, "products"));
-      const productsList = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setProducts(productsList);
-    };
-
-    fetchProducts();
-  }, [db]);
-
-  const handleDelete = async () => {
-    if (editingProduct) {
-      await deleteDoc(doc(db, "products", editingProduct.id));
-      setProducts(
-        products.filter((product) => product.id !== editingProduct.id)
-      );
-      setShowModal(false);
-    }
-  };
-
-  const handleEdit = (product) => {
-    setEditingProduct(product);
-    setProductName(product.productName);
-    setProductImage(product.productImage);
-    setTotalStock(product.totalStock);
-    setMinStock(product.minStock);
-    setPurchasePrice(product.purchasePrice);
-    setMrp(product.mrp);
-    setWholesaleSellPrice(product.wholesaleSellPrice);
-    setShowModal(true);
-  };
-
-  const handleUpdate = async (e) => {
-    e.preventDefault();
-    const productRef = doc(db, "products", editingProduct.id);
-    await updateDoc(productRef, {
-      productName,
-      productImage,
-      totalStock,
-      minStock,
-      purchasePrice,
-      mrp,
-      wholesaleSellPrice,
+    const auth = getAuth();
+    onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        setUserUID(currentUser.uid);
+        fetchProducts(currentUser.uid);
+      }
     });
-    setProducts(
-      products.map((product) =>
-        product.id === editingProduct.id
-          ? {
-              ...product,
-              productName,
-              productImage,
-              totalStock,
-              minStock,
-              purchasePrice,
-              mrp,
-              wholesaleSellPrice,
-            }
-          : product
-      )
+  }, []);
+
+  // const fetchProducts = async (uid) => {
+  //   const productsQuery = collection(db, "users", uid, "products");
+  //   const querySnapshot = await getDocs(productsQuery);
+
+  //   const productsList = await Promise.all(
+  //     querySnapshot.docs.map(async (doc) => {
+  //       const productData = { id: doc.id, ...doc.data() };
+  //       const imageDoc = await getDocs(
+  //         query(
+  //           collection(db, "users", uid, "productImages"),
+  //           where("productId", "==", productData.productId)
+  //         )
+  //       );
+  //       if (!imageDoc.empty) {
+  //         productData.productImage = imageDoc.docs[0].data().productImage;
+  //       }
+  //       return productData;
+  //     })
+  //   );
+
+  //   setProducts(productsList);
+  // };
+
+  const fetchProducts = async (uid) => {
+    const productsQuery = collection(db, "users", uid, "products");
+    const querySnapshot = await getDocs(productsQuery);
+
+    const productsList = await Promise.all(
+      querySnapshot.docs.map(async (doc) => {
+        const productData = { id: doc.id, ...doc.data() };
+
+        if (productData.productId) {
+          const imageDoc = await getDocs(
+            query(
+              collection(db, "users", uid, "productImages"),
+              where("productId", "==", productData.productId)
+            )
+          );
+          if (!imageDoc.empty) {
+            productData.productImage = imageDoc.docs[0].data().productImage;
+          }
+        }
+
+        return productData;
+      })
     );
-    setEditingProduct(null);
-    setProductName("");
-    setProductImage("");
-    setTotalStock("");
-    setMinStock("");
-    setPurchasePrice("");
-    setMrp("");
-    setWholesaleSellPrice("");
-    setShowModal(false);
+
+    setProducts(productsList);
+  };
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData({ ...formData, [name]: value });
   };
 
   const handleAddProduct = async (e) => {
     e.preventDefault();
-    const newProduct = {
-      productName,
-      productImage,
-      totalStock,
-      minStock,
-      purchasePrice,
-      mrp,
-      wholesaleSellPrice,
+
+    if (!userUID || !formData.productImage) return;
+
+    const productId = generateRandomCode(8);
+
+    // Compress and convert image to base64
+    const options = {
+      maxSizeMB: 0.5,
+      maxWidthOrHeight: 800,
+      useWebWorker: true,
     };
-    const docRef = await addDoc(collection(db, "products"), newProduct);
-    setProducts([...products, { id: docRef.id, ...newProduct }]);
-    setProductName("");
-    setProductImage("");
-    setTotalStock("");
-    setMinStock("");
-    setPurchasePrice("");
-    setMrp("");
-    setWholesaleSellPrice("");
-    setShowModal(false);
+
+    const compressedFile = await imageCompression(
+      formData.productImage,
+      options
+    );
+    const base64Image = await imageCompression.getDataUrlFromFile(
+      compressedFile
+    );
+
+    const newProduct = { ...formData, productId, productImage: base64Image };
+
+    await addDoc(collection(db, "users", userUID, "products"), newProduct);
+
+    await setDoc(doc(db, "users", userUID, "productImages", productId), {
+      productId,
+      productImage: base64Image,
+    });
+
+    resetForm();
+
+    fetchProducts(userUID);
   };
 
-  const handleImageChange = async (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const options = {
-        maxSizeMB: 1,
-        maxWidthOrHeight: 1920,
-        useWebWorker: true,
-      };
-      try {
-        const compressedFile = await imageCompression(file, options);
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setProductImage(reader.result);
-        };
-        reader.readAsDataURL(compressedFile);
-      } catch (error) {
-        console.error("Error compressing image:", error);
+  const handleEditProduct = async (e) => {
+    e.preventDefault();
+
+    if (!userUID) return;
+
+    // Prepare data for update
+    let updatedData = { ...formData };
+
+    // Remove any undefined fields
+    for (const key in updatedData) {
+      if (updatedData[key] === undefined || updatedData[key] === "") {
+        console.warn(`Field ${key} is undefined or empty`);
+        delete updatedData[key]; // Remove undefined or empty fields
       }
     }
+
+    // Compress and convert image to base64 if a new image is uploaded
+    if (formData.productImage) {
+      const options = {
+        maxSizeMB: 0.5,
+        maxWidthOrHeight: 800,
+        useWebWorker: true,
+      };
+
+      const compressedFile = await imageCompression(
+        formData.productImage,
+        options
+      );
+      updatedData.productImage = await imageCompression.getDataUrlFromFile(
+        compressedFile
+      );
+    }
+
+    // Update the existing product in Firestore
+    await setDoc(
+      doc(db, "users", userUID, "products", currentProductId),
+      updatedData
+    );
+
+    resetForm();
+
+    fetchProducts(userUID);
   };
 
-  const handleShowModal = () => {
-    setEditingProduct(null);
-    setProductName("");
-    setProductImage("");
-    setTotalStock("");
-    setMinStock("");
-    setPurchasePrice("");
-    setMrp("");
-    setWholesaleSellPrice("");
-    setShowModal(true);
+  const resetForm = () => {
+    setFormData({
+      productName: "",
+      productDesc: "",
+      brand: "",
+      bulkPrice: "",
+      retailPrice: "",
+      wholesalePrice: "",
+      stockQty: "",
+      minStock: "",
+      offerValue: "",
+      category: "",
+      rank: "",
+      productImage: null,
+      purchasePrice: "",
+      mrp: "",
+      wholesaleSellPrice: "",
+    });
+
+    setShowAddModal(false);
+    setShowEditModal(false);
+  };
+
+  const generateRandomCode = (length) => {
+    const characters =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    return Array.from({ length }, () =>
+      characters.charAt(Math.floor(Math.random() * characters.length))
+    ).join("");
+  };
+
+  const renderProductDetails = (product) => (
+    <div
+      className="product-card"
+      key={product.id}
+      style={{ backgroundImage: `url(${product.productImage})` }}
+      onClick={() => openEditModal(product)} // Open edit modal on click
+    >
+      <div className="details">
+        <div className="p-2">
+          <p>Name: {product.productName}</p>
+          <p>Stock Qty: {product.stockQty}</p>
+          <p>MRP: {product.mrp}</p>
+          <p>Retail Price: {product.retailPrice}</p>
+          <p>Wholesale Price: {product.wholesalePrice}</p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const openEditModal = (product) => {
+    setCurrentProductId(product.id); // Set the current product ID for editing
+    setFormData({
+      productName: product.productName,
+      productDesc: product.productDesc,
+      brand: product.brand,
+      bulkPrice: product.bulkPrice,
+      retailPrice: product.retailPrice,
+      wholesalePrice: product.wholesalePrice,
+      stockQty: product.stockQty,
+      minStock: product.minStock,
+      offerValue: product.offerValue,
+      category: product.category,
+      rank: product.rank,
+      purchasePrice: product.purchasePrice,
+      mrp: product.mrp,
+      wholesaleSellPrice: product.wholesaleSellPrice,
+      // Keep existing image unless changed
+      productImage: null,
+    });
+    setShowEditModal(true); // Show edit modal
   };
 
   return (
-    <div className="stock-container">
-      <h1>Stock Management</h1>
-      <Button variant="primary" onClick={handleShowModal}>
+    <div>
+      <Button variant="primary" onClick={() => setShowAddModal(true)}>
         Add Product
       </Button>
-      <table className="table table-striped table-responsive mt-4">
-        <thead>
-          <tr>
-            <th>Product Name</th>
-            <th>Product Image</th>
-            <th>Total Stock</th>
-            <th>Min Stock</th>
-            <th>Purchase Price</th>
-            <th>MRP</th>
-            <th>Wholesale Sell Price</th>
-          </tr>
-        </thead>
-        <tbody>
-          {products.map((product) => (
-            <tr key={product.id} onClick={() => handleEdit(product)}>
-              <td>{product.productName}</td>
-              <td>
-                <img
-                  src={product.productImage}
-                  alt={product.productName}
-                  width="50"
-                />
-              </td>
-              <td>{product.totalStock}</td>
-              <td>{product.minStock}</td>
-              <td>{product.purchasePrice}</td>
-              <td>{product.mrp}</td>
-              <td>{product.wholesaleSellPrice}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
 
-      <Modal show={showModal} onHide={() => setShowModal(false)}>
+      {/* Add Product Modal */}
+      <Modal show={showAddModal} onHide={() => setShowAddModal(false)}>
         <Modal.Header closeButton>
-          <Modal.Title>
-            {editingProduct ? "Edit Product" : "Add Product"}
-          </Modal.Title>
+          <Modal.Title>Add Product</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          <form onSubmit={editingProduct ? handleUpdate : handleAddProduct}>
-            <div className="form-group">
-              <label>Product Name</label>
-              <input
-                type="text"
-                className="form-control"
-                value={productName}
-                onChange={(e) => setProductName(e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label>Product Image</label>
-              <input
-                type="file"
-                className="form-control"
-                onChange={handleImageChange}
-              />
-              {productImage && (
-                <img
-                  src={productImage}
-                  alt="Product"
-                  width="100"
-                  className="mt-2"
-                />
+          <Form onSubmit={handleAddProduct}>
+            <Row>
+              {Object.keys(formData).map((key) =>
+                key !== "productImage" ? (
+                  <Col xs={6} key={key}>
+                    <Form.Group controlId={`form${key}`}>
+                      <Form.Label>
+                        {key
+                          .replace(/([A-Z])/g, " $1")
+                          .replace(/^./, (str) => str.toUpperCase())}
+                      </Form.Label>
+                      <Form.Control
+                        type={
+                          key.includes("Price") || key.includes("Qty")
+                            ? "number"
+                            : "text"
+                        }
+                        name={key}
+                        value={formData[key]}
+                        onChange={handleInputChange}
+                        required
+                      />
+                    </Form.Group>
+                  </Col>
+                ) : (
+                  <Col xs={12} key={key}>
+                    <Form.Group controlId={`form${key}`}>
+                      <Form.Label>Product Image</Form.Label>
+                      <Form.Control
+                        type="file"
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            productImage: e.target.files[0],
+                          })
+                        }
+                        required
+                      />
+                    </Form.Group>
+                  </Col>
+                )
               )}
-            </div>
-            <div className="form-group">
-              <label>Total Stock</label>
-              <input
-                type="text"
-                className="form-control"
-                value={totalStock}
-                onChange={(e) => setTotalStock(e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label>Min Stock</label>
-              <input
-                type="text"
-                className="form-control"
-                value={minStock}
-                onChange={(e) => setMinStock(e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label>Purchase Price</label>
-              <input
-                type="text"
-                className="form-control"
-                value={purchasePrice}
-                onChange={(e) => setPurchasePrice(e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label>MRP</label>
-              <input
-                type="text"
-                className="form-control"
-                value={mrp}
-                onChange={(e) => setMrp(e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label>Wholesale Sell Price</label>
-              <input
-                type="text"
-                className="form-control"
-                value={wholesaleSellPrice}
-                onChange={(e) => setWholesaleSellPrice(e.target.value)}
-              />
-            </div>
-            <Button variant="success" type="submit" className="mt-2">
-              {editingProduct ? "Update Product" : "Add Product"}
+            </Row>
+            <Button variant="primary" type="submit">
+              Add Product
             </Button>
-            {editingProduct && (
-              <Button
-                variant="danger"
-                onClick={handleDelete}
-                className="mt-2 ml-2"
-              >
-                Delete Product
-              </Button>
-            )}
-          </form>
+          </Form>
         </Modal.Body>
       </Modal>
+
+      {/* Edit Product Modal */}
+      <Modal show={showEditModal} onHide={() => setShowEditModal(false)}>
+        <Modal.Header closeButton>
+          <Modal.Title>Edit Product</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form onSubmit={handleEditProduct}>
+            <Row>
+              {Object.keys(formData).map((key) =>
+                key !== "productImage" ? (
+                  <Col xs={6} key={key}>
+                    <Form.Group controlId={`edit${key}`}>
+                      <Form.Label>
+                        {key
+                          .replace(/([A-Z])/g, " $1")
+                          .replace(/^./, (str) => str.toUpperCase())}
+                      </Form.Label>
+                      <Form.Control
+                        type={
+                          key.includes("Price") || key.includes("Qty")
+                            ? "number"
+                            : "text"
+                        }
+                        name={key}
+                        value={formData[key]}
+                        onChange={handleInputChange}
+                        required
+                      />
+                    </Form.Group>
+                  </Col>
+                ) : (
+                  <Col xs={12} key={key}>
+                    <Form.Group controlId={`edit${key}`}>
+                      <Form.Label>Product Image</Form.Label>
+                      <Form.Control
+                        type="file"
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            productImage: e.target.files[0],
+                          })
+                        }
+                      />
+                    </Form.Group>
+                  </Col>
+                )
+              )}
+            </Row>
+            <Button variant="primary" type="submit">
+              Update Product
+            </Button>
+          </Form>
+        </Modal.Body>
+      </Modal>
+
+      {/* Render Products */}
+      <div className="product-flex-container m-1">
+        {products.map(renderProductDetails)}
+      </div>
+
+      {/* Styles */}
+      <style jsx>{`
+        .product-flex-container {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: space-around; /* Align items to the start */
+          margin: -5px; /* Remove default margin */
+        }
+        .product-card {
+          flex: 1 1 150px; /* Allow cards to grow and shrink */
+          max-width: 200px; /* Set a maximum width for each card */
+          height: 240px;
+          position: relative;
+          background-size: cover; /* Cover the entire card */
+          background-repeat: no-repeat; /* No repeat */
+          border-radius: 8px;
+          overflow: hidden;
+          box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.3);
+          display: flex;
+          align-items: flex-start; /* Align text to the top */
+          color: white; /* Text color */
+          margin: 5px; /* Add some spacing between cards */
+        }
+        .details {
+          height: 100%;
+          background-color: rgba(0, 0, 0, 0.5);
+          width: 100%;
+        }
+      `}</style>
     </div>
   );
 };
