@@ -49,23 +49,26 @@ const More = () => {
       >
         Profile
       </button>
-      {showProfile && user && (
-        <div className="profile-details">
-          <div>
-            <label>
-              Display Name:
-              <input
-                type="text"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-              />
-            </label>
+      <div className="">
+        {showProfile && user && (
+          <div className="profile-details">
+            <div>
+              <label>
+                Display Name:
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                />
+              </label>
+            </div>
+            <button className="save-button" onClick={handleSave}>
+              Save
+            </button>
           </div>
-          <button className="save-button" onClick={handleSave}>
-            Save
-          </button>
-        </div>
-      )}
+        )}
+      </div>
+
       <button className="sign-out-button" onClick={handleSignOut}>
         Sign Out
       </button>

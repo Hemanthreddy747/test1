@@ -1,0 +1,10 @@
+.product-flex-container p {
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+ 
+  
+}
+.product-flex-container .details p span {
+  font-weight: 700;
+   font-size: 18px;
+}

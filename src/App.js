@@ -9,6 +9,7 @@ import More from "./pages/more";
 import { AuthProvider } from "./context/AuthContext";
 import PrivateRoute from "./components/PrivateRoute";
 import Stock from "./pages/stock";
+import Wholesale from "./pages/wholesale";
 
 function App() {
   return (
@@ -32,6 +33,15 @@ function App() {
                 <PrivateRoute>
                   <Navbar />
                   <Billing />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/wholesale"
+              element={
+                <PrivateRoute>
+                  <Navbar />
+                  <Wholesale />
                 </PrivateRoute>
               }
             />

@@ -5,8 +5,8 @@ import "./home.css";
 const Home = () => {
   return (
     <>
-      <div className="content">
-        <h>homehome home home home home home home home home home home home </h>
+      <div className="content  d-flex mx-auto">
+        <h1 className="mx-auto mt-4 pt-4">Home </h1>
       </div>
     </>
   );
