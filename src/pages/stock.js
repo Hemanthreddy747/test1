@@ -1,4 +1,3 @@
-// Part 1: Imports and Initial Setup
 import React, { useState, useEffect, useCallback } from "react";
 import { Button, Modal, Form, Row, Col } from "react-bootstrap";
 import { db } from "../firebase/firebase";
@@ -24,189 +23,108 @@ import LoaderC from "../utills/loaderC";
 import BatchUpload from "./batchUpload";
 
 const Stock = () => {
-  const [showBatchUploadModal, setShowBatchUploadModal] = useState(false);
-  // ============= NOTIFICATION HELPERS =============
-  const notifyError = (message) => toast.error(message);
-  const notifySuccess = (message) => toast.success(message);
-
   // ============= STATE MANAGEMENT =============
-  // UI States
+  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [userUID, setUserUID] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-
-  // User State
-  const [userUID, setUserUID] = useState(null);
-
-  // Product States
-  const [products, setProducts] = useState([]);
-  const [activeProducts, setActiveProducts] = useState([]);
-  const [archivedProducts, setArchivedProducts] = useState([]);
+  const [showBatchUploadModal, setShowBatchUploadModal] = useState(false);
   const [currentProductId, setCurrentProductId] = useState(null);
-
-  // Pagination States
-  const [lastDoc, setLastDoc] = useState(null);
-  const [hasMore, setHasMore] = useState(true);
-  const PRODUCTS_PER_PAGE = 400;
-
-  // Filter States
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOption, setSortOption] = useState("");
-
-  // Form Data State
   const [formData, setFormData] = useState({
     productName: "",
     productDesc: "",
     brand: "",
+    category: "",
     bulkPrice: "",
     retailPrice: "",
     wholesalePrice: "",
     stockQty: "",
     minStock: "",
     offerValue: "",
-    category: "",
     rank: "",
-    productImage: null,
     purchasePrice: "",
     mrp: "",
-    wholesaleSellPrice: "",
     archived: false,
+    productImage: null,
   });
 
-  // ============= AUTHENTICATION & INITIAL LOAD =============
+  // ============= NOTIFICATION HELPERS =============
+  const notifyError = (message) => toast.error(message);
+  const notifySuccess = (message) => toast.success(message);
+
+  // ============= AUTH AND INITIAL LOAD =============
   useEffect(() => {
     const auth = getAuth();
-    onAuthStateChanged(auth, (currentUser) => {
-      if (currentUser) {
-        setUserUID(currentUser.uid);
-        fetchProducts(currentUser.uid);
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setUserUID(user.uid);
+        fetchProducts(user.uid);
       }
     });
+
+    return () => unsubscribe();
   }, []);
 
-  // ============= SEARCH & SORT FUNCTIONALITY =============
-  useEffect(() => {
-    handleSearchAndSort();
-  }, [searchTerm, sortOption, products]);
-
-  const handleSearchAndSort = () => {
-    let filteredProducts = [...products];
-
-    // Apply search filter
-    if (searchTerm) {
-      filteredProducts = filteredProducts.filter((product) =>
-        product.productName.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    // Apply sorting
-    if (sortOption === "name") {
-      filteredProducts.sort((a, b) =>
-        a.productName.localeCompare(b.productName)
-      );
-    } else if (sortOption === "stockQty") {
-      filteredProducts.sort((a, b) => a.stockQty - b.stockQty);
-    }
-
-    // Separate active and archived products
-    setActiveProducts(filteredProducts.filter((product) => !product.archived));
-    setArchivedProducts(filteredProducts.filter((product) => product.archived));
-  };
-
-  // ============= INFINITE SCROLL FUNCTIONALITY =============
-  const handleScroll = useCallback(() => {
-    if (
-      window.innerHeight + document.documentElement.scrollTop ===
-      document.documentElement.offsetHeight
-    ) {
-      if (hasMore && !loading) {
-        fetchProducts(userUID, true);
-      }
-    }
-  }, [hasMore, loading, userUID]);
-
-  useEffect(() => {
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [handleScroll]);
-
-  // ============= IMAGE HANDLING =============
-  useEffect(() => {
-    if (userUID) {
-      cacheProductImages(userUID);
-    }
-  }, [userUID]);
-
-  const cacheProductImages = async (uid) => {
-    try {
-      const imagesQuery = collection(db, "users", uid, "productImages");
-      const imagesSnapshot = await getDocs(imagesQuery);
-      const imageCache = {};
-
-      imagesSnapshot.forEach((doc) => {
-        const data = doc.data();
-        if (data.productId) {
-          if (!imageCache[data.productId]) {
-            imageCache[data.productId] = [];
-          }
-          imageCache[data.productId].push({
-            id: doc.id,
-            ...data,
-          });
-        }
-      });
-
-      localStorage.setItem("productImages", JSON.stringify(imageCache));
-      return imageCache;
-    } catch (error) {
-      notifyError("Error caching product images");
-      return {};
-    }
-  };
-
-  // ============= PRODUCT CRUD OPERATIONS =============
-  // In the Stock component, modify the fetchProducts function:
-
+  // ============= DATA FETCHING =============
   const fetchProducts = async (uid, loadMore = false, forceRefresh = false) => {
+    if (!uid) return;
     setLoading(true);
+
     try {
-      // Clear existing data if it's a force refresh
-      if (forceRefresh) {
-        setProducts([]);
-        setLastDoc(null);
-        setHasMore(true);
-      }
-
-      let productsQuery = collection(db, "users", uid, "products");
-      productsQuery = query(productsQuery, limit(PRODUCTS_PER_PAGE));
-
-      if (loadMore && lastDoc && !forceRefresh) {
-        productsQuery = query(productsQuery, startAfter(lastDoc));
-      }
-
-      const querySnapshot = await getDocs(productsQuery);
-
-      if (querySnapshot.docs.length < PRODUCTS_PER_PAGE) {
-        setHasMore(false);
-      }
-
-      setLastDoc(querySnapshot.docs[querySnapshot.docs.length - 1]);
-
-      // Clear local storage cache if it's a force refresh
-      if (forceRefresh) {
-        localStorage.removeItem("productImages");
-        await cacheProductImages(uid);
-      }
-
-      const cachedImages = JSON.parse(
-        localStorage.getItem("productImages") || "{}"
-      );
-
-      const productsList = querySnapshot.docs.map((doc) => ({
+      const productsRef = collection(db, "users", uid, "products");
+      const q = query(productsRef, limit(50));
+      const querySnapshot = await getDocs(q);
+      let productsList = querySnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
 
+      // Fetch images for products
+      const imagePromises = productsList.map(async (product) => {
+        if (!product.productId) return;
+
+        // Check local cache first
+        const cachedImages = JSON.parse(
+          localStorage.getItem("productImages") || "{}"
+        );
+        if (cachedImages[product.productId]) {
+          return {
+            productId: product.productId,
+            images: cachedImages[product.productId],
+          };
+        }
+
+        // If not in cache, fetch from Firestore
+        const imagesRef = collection(db, "users", uid, "productImages");
+        const imagesQuery = query(
+          imagesRef,
+          where("productId", "==", product.productId)
+        );
+        const imagesSnapshot = await getDocs(imagesQuery);
+        const images = imagesSnapshot.docs.map((doc) => doc.data());
+
+        // Update cache
+        cachedImages[product.productId] = images;
+        localStorage.setItem("productImages", JSON.stringify(cachedImages));
+
+        return {
+          productId: product.productId,
+          images,
+        };
+      });
+
+      const imageResults = await Promise.all(imagePromises);
+      const cachedImages = {};
+      imageResults.forEach((result) => {
+        if (result) {
+          cachedImages[result.productId] = result.images;
+        }
+      });
+
+      // Attach images to products
       productsList.forEach((product) => {
         if (product.productId && cachedImages[product.productId]) {
           product.productImage =
@@ -225,6 +143,7 @@ const Stock = () => {
     }
   };
 
+  // ============= PRODUCT OPERATIONS =============
   const handleAddProduct = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -290,7 +209,6 @@ const Stock = () => {
     }
   };
 
-  // ============= EDIT AND DELETE OPERATIONS =============
   const handleEditProduct = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -311,7 +229,6 @@ const Stock = () => {
 
       updatedData.updatedAt = serverTimestamp();
 
-      // Update product document
       const productRef = doc(
         db,
         "users",
@@ -321,8 +238,7 @@ const Stock = () => {
       );
       batch.set(productRef, updatedData, { merge: true });
 
-      // Handle image update if new image is provided
-      if (formData.productImage) {
+      if (formData.productImage && typeof formData.productImage !== "string") {
         const options = {
           maxSizeMB: 0.5,
           maxWidthOrHeight: 800,
@@ -417,7 +333,6 @@ const Stock = () => {
       try {
         const batch = writeBatch(db);
 
-        // Delete product document
         const productRef = doc(
           db,
           "users",
@@ -427,7 +342,6 @@ const Stock = () => {
         );
         batch.delete(productRef);
 
-        // Delete associated image
         if (formData.productId) {
           const imageRef = doc(
             db,
@@ -510,15 +424,16 @@ const Stock = () => {
     ).join("");
   };
 
-  // ============= RENDER UI =============
+  // ============= COMPUTED PROPERTIES =============
+  const activeProducts = products.filter((product) => !product.archived);
+  const archivedProducts = products.filter((product) => product.archived);
+
   return (
     <>
       {loading && <LoaderC />}
       <div>
         <ToastContainer />
-
         {/* Search and Add New Section */}
-
         <div className="d-flex justify-content-between mb-2 mt-2 ms-1 me-1 gap-1">
           <input
             type="text"
@@ -540,7 +455,6 @@ const Stock = () => {
             Add New
           </Button>
         </div>
-
         {/* Add Product Modal */}
         <Modal show={showAddModal} onHide={() => setShowAddModal(false)}>
           <Modal.Header closeButton>
@@ -606,7 +520,7 @@ const Stock = () => {
             </Form>
           </Modal.Body>
         </Modal>
-
+        {/* Batch Upload Modal */}
         <BatchUpload
           userUID={userUID}
           show={showBatchUploadModal}
@@ -624,72 +538,200 @@ const Stock = () => {
           <Modal.Body>
             <Form onSubmit={handleEditProduct}>
               <Row>
-                {Object.keys(formData).map((key) =>
-                  key !== "productImage" && key !== "archived" ? (
-                    <Col xs={6} key={key}>
-                      <Form.Group controlId={`edit${key}`}>
-                        <Form.Label>
-                          {key
-                            .replace(/([A-Z])/g, " $1")
-                            .replace(/^./, (str) => str.toUpperCase())}
-                        </Form.Label>
-                        <Form.Control
-                          type={
-                            key.includes("Price") || key.includes("Qty")
-                              ? "number"
-                              : "text"
-                          }
-                          name={key}
-                          value={formData[key]}
-                          onChange={handleInputChange}
-                          required
-                        />
-                      </Form.Group>
-                    </Col>
-                  ) : key === "productImage" ? (
-                    <Col xs={12} key={key}>
-                      <Form.Group controlId={`edit${key}`}>
-                        <Form.Label>Product Image</Form.Label>
-                        <Form.Control
-                          type="file"
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              productImage: e.target.files[0],
-                            })
-                          }
-                        />
-                      </Form.Group>
-                    </Col>
-                  ) : null
-                )}
+                <Col xs={6}>
+                  <Form.Group controlId="formProductName">
+                    <Form.Label>Product Name</Form.Label>
+                    <Form.Control
+                      type="text"
+                      name="productName"
+                      value={formData.productName || ""}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col xs={6}>
+                  <Form.Group controlId="formProductDesc">
+                    <Form.Label>Product Desc</Form.Label>
+                    <Form.Control
+                      type="text"
+                      name="productDesc"
+                      value={formData.productDesc || ""}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col xs={6}>
+                  <Form.Group controlId="formBrand">
+                    <Form.Label>Brand</Form.Label>
+                    <Form.Control
+                      type="text"
+                      name="brand"
+                      value={formData.brand || ""}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col xs={6}>
+                  <Form.Group controlId="formCategory">
+                    <Form.Label>Category</Form.Label>
+                    <Form.Control
+                      type="text"
+                      name="category"
+                      value={formData.category || ""}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col xs={6}>
+                  <Form.Group controlId="formBulkPrice">
+                    <Form.Label>Bulk Price</Form.Label>
+                    <Form.Control
+                      type="number"
+                      name="bulkPrice"
+                      value={formData.bulkPrice || ""}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col xs={6}>
+                  <Form.Group controlId="formRetailPrice">
+                    <Form.Label>Retail Price</Form.Label>
+                    <Form.Control
+                      type="number"
+                      name="retailPrice"
+                      value={formData.retailPrice || ""}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col xs={6}>
+                  <Form.Group controlId="formWholesalePrice">
+                    <Form.Label>Wholesale Price</Form.Label>
+                    <Form.Control
+                      type="number"
+                      name="wholesalePrice"
+                      value={formData.wholesalePrice || ""}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col xs={6}>
+                  <Form.Group controlId="formStockQty">
+                    <Form.Label>Stock Qty</Form.Label>
+                    <Form.Control
+                      type="number"
+                      name="stockQty"
+                      value={formData.stockQty || ""}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col xs={6}>
+                  <Form.Group controlId="formMinStock">
+                    <Form.Label>Min Stock</Form.Label>
+                    <Form.Control
+                      type="number"
+                      name="minStock"
+                      value={formData.minStock || ""}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col xs={6}>
+                  <Form.Group controlId="formOfferValue">
+                    <Form.Label>Offer Value</Form.Label>
+                    <Form.Control
+                      type="text"
+                      name="offerValue"
+                      value={formData.offerValue || ""}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col xs={6}>
+                  <Form.Group controlId="formRank">
+                    <Form.Label>Rank</Form.Label>
+                    <Form.Control
+                      type="text"
+                      name="rank"
+                      value={formData.rank || ""}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col xs={6}>
+                  <Form.Group controlId="formPurchasePrice">
+                    <Form.Label>Purchase Price</Form.Label>
+                    <Form.Control
+                      type="number"
+                      name="purchasePrice"
+                      value={formData.purchasePrice || ""}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col xs={6}>
+                  <Form.Group controlId="formMrp">
+                    <Form.Label>Mrp</Form.Label>
+                    <Form.Control
+                      type="number"
+                      name="mrp"
+                      value={formData.mrp || ""}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col xs={9}>
+                  <Form.Group controlId="formProductImage">
+                    <Form.Label>Product Image</Form.Label>
+
+                    <Form.Control
+                      type="file"
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          productImage: e.target.files[0],
+                        })
+                      }
+                    />
+                   
+                  </Form.Group>
+                </Col>
+                <Col xs={3}>
+                  <Form.Group controlId="formProductImage">
+                  
+                    {formData.productImage &&
+                      typeof formData.productImage === "string" && (
+                        <div className="mt-2">
+                          <img
+                            src={formData.productImage}
+                            alt="Current product"
+                            style={{ maxWidth: "50px", height: "auto" }}
+                          />
+                        </div>
+                      )}
+                  </Form.Group>
+                </Col>
               </Row>
-              <div className="d-flex justify-content-between mt-3">
-                <Button variant="primary" type="submit">
-                  Update Product
-                </Button>
-                <div>
-                  <Button
-                    variant="warning"
-                    type="button"
-                    onClick={handleArchiveProduct}
-                    className="me-2"
-                  >
-                    {formData.archived ? "Unarchive" : "Archive"} Product
-                  </Button>
-                  <Button
-                    variant="danger"
-                    type="button"
-                    onClick={handlePermanentDelete}
-                  >
-                    Delete Permanently
-                  </Button>
-                </div>
-              </div>
+              <Button variant="primary" type="submit" className="mt-3">
+                Update Product
+              </Button>
             </Form>
           </Modal.Body>
         </Modal>
-
         {/* Active Products Grid */}
         <div className="product-flex-container m-1">
           {activeProducts.length > 0 ? (
@@ -736,7 +778,6 @@ const Stock = () => {
             </div>
           )}
         </div>
-
         {/* Archived Products Grid */}
         {archivedProducts.length > 0 && (
           <div className="product-flex-container m-1">
@@ -764,7 +805,6 @@ const Stock = () => {
             ))}
           </div>
         )}
-
         {/* Styles */}
         <style jsx>{`
           .product-flex-container {
@@ -774,9 +814,10 @@ const Stock = () => {
             gap: 7px;
           }
           .product-card {
-            flex: 1 1 100px;
-            max-width: 125px;
-            height: 160px;
+            flex: 1 1 120px;
+            width: 120px;
+            max-width: 160px;
+            height: 150px;
             position: relative;
             background-size: 100%;
             background-repeat: no-repeat;

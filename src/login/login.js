@@ -43,11 +43,26 @@ const Login = () => {
   };
 
   const generateCaptcha = () => {
-    const num1 = Math.floor(Math.random() * 10);
-    const num2 = Math.floor(Math.random() * 10);
+    // Generate numbers between 0 and 9
+    let num1 = Math.floor(Math.random() * 10);
+    let num2 = Math.floor(Math.random() * 10);
+
+    // For subtraction, ensure num1 is larger than num2
     const isAddition = Math.random() > 0.5;
+    if (!isAddition) {
+      // If subtraction, make sure first number is larger
+      if (num1 < num2) {
+        [num1, num2] = [num2, num1]; // Swap numbers
+      }
+      // If they're equal, add 1 to first number
+      if (num1 === num2) {
+        num1 += 1;
+      }
+    }
+
     const question = isAddition ? `${num1} + ${num2}` : `${num1} - ${num2}`;
     const answer = isAddition ? num1 + num2 : num1 - num2;
+
     setCaptchaQuestion(question);
     setCaptchaValue(answer.toString());
   };
@@ -91,16 +106,16 @@ const Login = () => {
   const handleGoogleLogin = async () => {
     const provider = new GoogleAuthProvider();
     setLoading(true);
-   try {
-     const userCredential = await signInWithPopup(auth, provider);
-     const user = userCredential.user;
-     console.log("User UID:", user.uid);
-     navigate("/stock");
-   } catch (error) {
-     notifyError(error.message);
-   } finally {
-     setLoading(false);
-   }
+    try {
+      const userCredential = await signInWithPopup(auth, provider);
+      const user = userCredential.user;
+      console.log("User UID:", user.uid);
+      navigate("/stock");
+    } catch (error) {
+      notifyError(error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleResetPassword = async (e) => {

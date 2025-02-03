@@ -31,8 +31,6 @@
   width: 100%;
   animation: fadeIn var(--transition-duration) ease-in-out;
   position: relative;
-  
-  
 }
 
 .logo-container {
