@@ -61,6 +61,10 @@ body {
   font-size: var(--font-size-medium);
   border-radius: var(--border-radius);
   transition: background-color var(--transition-duration);
+  white-space: nowrap;
+}
+button {
+  white-space: nowrap;
 }
 
 .button:hover {

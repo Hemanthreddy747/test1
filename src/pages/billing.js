@@ -1,17 +1,16 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Button, Form, Table, Modal } from "react-bootstrap";
 import { db } from "../firebase/firebase";
 import {
   collection,
   getDocs,
-  addDoc,
   query,
   where,
   serverTimestamp,
   limit,
-  writeBatch, // ensure this is here
-  doc, // ensure this is here
-  increment, // add this
+  writeBatch,
+  doc,
+  increment,
 } from "firebase/firestore";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 import { ToastContainer, toast } from "react-toastify";
@@ -27,6 +26,8 @@ const Billing = () => {
   const [loading, setLoading] = useState(false);
   const [userUID, setUserUID] = useState(null);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [showCartModal, setShowCartModal] = useState(false);
+  const [processingCheckout, setProcessingCheckout] = useState(false);
   const [customerInfo, setCustomerInfo] = useState({
     name: "",
     phone: "",
@@ -34,37 +35,60 @@ const Billing = () => {
     address: "",
   });
 
-  // Notification helpers
-  const notifyError = (message) => toast.error(message);
   const notifySuccess = (message) => toast.success(message);
+  const notifyError = (message) => toast.error(message);
 
-  // Add new function for image caching
-  const cacheProductImages = async (uid) => {
+  const cacheProductImages = useCallback(async (uid) => {
+    if (!uid) return;
     try {
-      const imagesRef = collection(db, "users", uid, "productImages");
-      const imagesSnapshot = await getDocs(imagesRef);
-      const imageCache = {};
+      const cachedImages = JSON.parse(
+        localStorage.getItem("productImages") || "{}"
+      );
+      const imageCache = { ...cachedImages };
 
-      imagesSnapshot.forEach((doc) => {
-        const data = doc.data();
-        if (data.productId) {
-          if (!imageCache[data.productId]) {
-            imageCache[data.productId] = [];
+      const productsRef = collection(db, "users", uid, "products");
+      const q = query(productsRef, where("archived", "==", false), limit(50));
+      const querySnapshot = await getDocs(q);
+      const products = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      const uncachedProducts = products.filter(
+        (product) => !imageCache[product.productId]
+      );
+
+      if (uncachedProducts.length > 0) {
+        const imagesRef = collection(db, "users", uid, "productImages");
+        const imagesPromises = uncachedProducts.map(async (product) => {
+          if (!product.productId) return null;
+          const imagesQuery = query(
+            imagesRef,
+            where("productId", "==", product.productId)
+          );
+          const imagesSnapshot = await getDocs(imagesQuery);
+          return {
+            productId: product.productId,
+            images: imagesSnapshot.docs.map((doc) => doc.data()),
+          };
+        });
+
+        const results = await Promise.all(imagesPromises);
+        results.forEach((result) => {
+          if (result) {
+            imageCache[result.productId] = result.images;
           }
-          imageCache[data.productId].push({
-            id: doc.id,
-            ...data,
-          });
-        }
-      });
+        });
 
-      localStorage.setItem("productImages", JSON.stringify(imageCache));
+        localStorage.setItem("productImages", JSON.stringify(imageCache));
+      }
+
       return imageCache;
     } catch (error) {
       console.error("Error caching product images:", error);
       return {};
     }
-  };
+  }, []);
 
   const fetchProducts = useCallback(async (uid) => {
     if (!uid) return;
@@ -74,57 +98,19 @@ const Billing = () => {
       const productsRef = collection(db, "users", uid, "products");
       const q = query(productsRef, where("archived", "==", false), limit(50));
       const querySnapshot = await getDocs(q);
-      let productsList = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
 
-      const imagePromises = productsList.map(async (product) => {
-        if (!product.productId) return;
+      const cachedImages = JSON.parse(
+        localStorage.getItem("productImages") || "{}"
+      );
 
-        const cachedImages = JSON.parse(
-          localStorage.getItem("productImages") || "{}"
-        );
-        if (cachedImages[product.productId]) {
-          return {
-            productId: product.productId,
-            images: cachedImages[product.productId],
-          };
-        }
-
-        const imagesRef = collection(db, "users", uid, "productImages");
-        const imagesQuery = query(
-          imagesRef,
-          where("productId", "==", product.productId)
-        );
-        const imagesSnapshot = await getDocs(imagesQuery);
-        const images = imagesSnapshot.docs.map((doc) => doc.data());
-
-        cachedImages[product.productId] = images;
-        localStorage.setItem("productImages", JSON.stringify(cachedImages));
-
+      const productsList = querySnapshot.docs.map((doc) => {
+        const data = doc.data();
         return {
-          productId: product.productId,
-          images,
+          id: doc.id,
+          ...data,
+          productImage:
+            data.productId && cachedImages[data.productId]?.[0]?.productImage,
         };
-      });
-
-      const imageResults = await Promise.all(imagePromises);
-      const cachedImages = {};
-      imageResults.forEach((result) => {
-        if (result) {
-          cachedImages[result.productId] = result.images;
-        }
-      });
-
-      productsList = productsList.map((product) => {
-        if (product.productId && cachedImages[product.productId]) {
-          return {
-            ...product,
-            productImage: cachedImages[product.productId][0]?.productImage,
-          };
-        }
-        return product;
       });
 
       setProducts(productsList);
@@ -147,9 +133,9 @@ const Billing = () => {
       }
     });
     return () => unsubscribe();
-  }, [fetchProducts]);
+  }, [fetchProducts, cacheProductImages]);
 
-  const addToCart = (product) => {
+  const addToCart = useCallback((product) => {
     setCart((prevCart) => {
       const existingItem = prevCart.find((item) => item.id === product.id);
       if (existingItem) {
@@ -165,32 +151,56 @@ const Billing = () => {
       }
       return [...prevCart, { ...product, quantity: 1 }];
     });
-  };
+  }, []);
 
-  const removeFromCart = (productId) => {
-    setCart((prevCart) => prevCart.filter((item) => item.id !== productId));
-  };
-
-  const updateQuantity = (productId, newQuantity) => {
-    const product = products.find((p) => p.id === productId);
-    if (newQuantity > product.stockQty) {
-      notifyError("Cannot add more than available stock");
-      return;
-    }
-
+  const removeFromCart = useCallback((productId) => {
     setCart((prevCart) =>
-      prevCart.map((item) =>
-        item.id === productId ? { ...item, quantity: newQuantity } : item
-      )
+      prevCart
+        .map((item) => {
+          if (item.id === productId) {
+            return item.quantity === 1
+              ? null
+              : { ...item, quantity: item.quantity - 1 };
+          }
+          return item;
+        })
+        .filter(Boolean)
     );
-  };
+  }, []);
 
-  const calculateTotal = () => {
+  const updateQuantity = useCallback(
+    (productId, newQuantity) => {
+      if (newQuantity < 1) return;
+
+      const product = products.find((p) => p.id === productId);
+      if (newQuantity > product.stockQty) {
+        notifyError("Cannot add more than available stock");
+        return;
+      }
+
+      setCart((prevCart) =>
+        prevCart.map((item) =>
+          item.id === productId ? { ...item, quantity: newQuantity } : item
+        )
+      );
+    },
+    [products]
+  );
+
+  const calculateTotal = useCallback(() => {
     return cart.reduce(
       (total, item) => total + item.retailPrice * item.quantity,
       0
     );
-  };
+  }, [cart]);
+
+  const getQuantityInCart = useCallback(
+    (productId) => {
+      const item = cart.find((item) => item.id === productId);
+      return item ? item.quantity : 0;
+    },
+    [cart]
+  );
 
   const handleCheckout = async () => {
     if (!customerInfo.name || !customerInfo.phone) {
@@ -198,26 +208,39 @@ const Billing = () => {
       return;
     }
 
-    setLoading(true);
+    setProcessingCheckout(true);
     try {
+      const batch = writeBatch(db);
+
+      // Create order document reference
+      const orderRef = doc(collection(db, "users", userUID, "orders"));
+
+      // Prepare order data with cleaned cart items (removing productImage)
+      const cleanedCartItems = cart.map((item) => {
+        const { productImage, ...cleanedItem } = item;
+        return cleanedItem;
+      });
+
       const orderData = {
         customerInfo,
-        items: cart,
+        items: cleanedCartItems,
         total: calculateTotal(),
         timestamp: serverTimestamp(),
         status: "completed",
       };
 
-      await addDoc(collection(db, "users", userUID, "orders"), orderData);
+      // Add order to batch
+      batch.set(orderRef, orderData);
 
-      // Update stock quantities
-      const batch = writeBatch(db);
+      // Update product quantities in the same batch
       cart.forEach((item) => {
         const productRef = doc(db, "users", userUID, "products", item.id);
         batch.update(productRef, {
           stockQty: increment(-item.quantity),
         });
       });
+
+      // Commit all changes in a single batch
       await batch.commit();
 
       notifySuccess("Order completed successfully");
@@ -234,31 +257,33 @@ const Billing = () => {
       console.error("Error processing checkout:", error);
       notifyError("Error processing checkout");
     } finally {
-      setLoading(false);
+      setProcessingCheckout(false);
     }
   };
 
-  const filteredProducts = products
-    .filter((product) =>
-      product.productName.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-    .sort((a, b) => {
-      switch (sortOption) {
-        case "name":
-          return a.productName.localeCompare(b.productName);
-        case "price":
-          return a.retailPrice - b.retailPrice;
-        default:
-          return 0;
-      }
-    });
+  const filteredProducts = useMemo(() => {
+    return products
+      .filter((product) =>
+        product.productName.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+      .sort((a, b) => {
+        switch (sortOption) {
+          case "name":
+            return a.productName.localeCompare(b.productName);
+          case "price":
+            return a.retailPrice - b.retailPrice;
+          default:
+            return 0;
+        }
+      });
+  }, [products, searchTerm, sortOption]);
 
   return (
     <>
       {loading && <LoaderC />}
       <ToastContainer />
       <div className="billing-container">
-        <div className="search-sort-section p-2">
+        <div className="search-sort-section d-flex p-2">
           <Form.Control
             type="text"
             placeholder="Search products..."
@@ -281,7 +306,9 @@ const Billing = () => {
           <div className="product-flex-container m-1">
             {filteredProducts.map((product) => (
               <div
-                className="product-card"
+                className={`product-card ${
+                  getQuantityInCart(product.id) > 0 ? "has-items" : ""
+                }`}
                 key={product.id}
                 style={{
                   backgroundImage: product.productImage
@@ -290,6 +317,22 @@ const Billing = () => {
                 }}
                 onClick={() => addToCart(product)}
               >
+                {getQuantityInCart(product.id) > 0 && (
+                  <>
+                    <div className="product-quantity-badge">
+                      {getQuantityInCart(product.id)}
+                    </div>
+                    <button
+                      className="product-minus-button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeFromCart(product.id);
+                      }}
+                    >
+                      -
+                    </button>
+                  </>
+                )}
                 <div className="details">
                   <div className="p-2">
                     <p>
@@ -298,67 +341,99 @@ const Billing = () => {
                     <p>
                       <span>{product.productName}</span>
                     </p>
-                    <p className="mt-4">MRP: ₹{product.mrp}</p>
+                    <p className="">MRP: ₹{product.mrp}</p>
                     <p>Price: ₹{product.retailPrice}</p>
                   </div>
                 </div>
               </div>
             ))}
           </div>
-
-          <div className="cart-section">
-            <h3>Cart</h3>
-            <Table striped bordered hover>
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th>Quantity</th>
-                  <th>Price</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cart.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.productName}</td>
-                    <td>
-                      <Form.Control
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) =>
-                          updateQuantity(item.id, parseInt(e.target.value))
-                        }
-                      />
-                    </td>
-                    <td>₹{item.retailPrice * item.quantity}</td>
-                    <td>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => removeFromCart(item.id)}
-                      >
-                        Remove
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-            <div className="d-flex justify-content-between align-items-center">
-              <h4>Total: ₹{calculateTotal()}</h4>
-              <Button
-                variant="primary"
-                onClick={() => setShowCheckoutModal(true)}
-                disabled={cart.length === 0}
-              >
-                Checkout
-              </Button>
+          {cart.length > 0 && (
+            <div
+              className="floating-cart"
+              onClick={() => setShowCartModal(true)}
+            >
+              <i className="fas fa-shopping-cart"></i>
+              <div className="cart-total">₹{calculateTotal()}</div>
+              <div className="cart-counter">
+                {cart.reduce((sum, item) => sum + item.quantity, 0)}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
+      {/* Cart Modal */}
+      <Modal show={showCartModal} onHide={() => setShowCartModal(false)}>
+        <Modal.Header closeButton>
+          <Modal.Title>Shopping Cart</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div className="d-flex justify-content-between align-items-center mt-2 mb-3">
+            <h4>Total: ₹{calculateTotal()}</h4>
+            <div className="cart-actions">
+              <Button
+                variant="danger"
+                onClick={() => {
+                  setCart([]);
+                  setShowCartModal(false);
+                }}
+                className="cancel-all-button"
+              >
+                Cancel All
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setShowCartModal(false);
+                  setShowCheckoutModal(true);
+                }}
+              >
+                Proceed to Checkout
+              </Button>
+            </div>
+          </div>
+          <Table striped bordered hover className="m-0">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Quantity</th>
+                <th>Price</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cart.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.productName}</td>
+                  <td>
+                    <Form.Control
+                      type="number"
+                      min="1"
+                      value={item.quantity}
+                      onChange={(e) =>
+                        updateQuantity(item.id, parseInt(e.target.value))
+                      }
+                    />
+                  </td>
+                  <td>₹{item.retailPrice * item.quantity}</td>
+                  <td>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => removeFromCart(item.id)}
+                    >
+                      Remove
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </Modal.Body>
+      </Modal>
+
+      {/* Checkout Modal */}
       <Modal
         show={showCheckoutModal}
         onHide={() => setShowCheckoutModal(false)}
@@ -369,7 +444,7 @@ const Billing = () => {
         <Modal.Body>
           <Form>
             <Form.Group className="mb-3">
-              <Form.Label>Customer Name</Form.Label>
+              <Form.Label>Customer Name*</Form.Label>
               <Form.Control
                 type="text"
                 value={customerInfo.name}
@@ -379,7 +454,7 @@ const Billing = () => {
               />
             </Form.Group>
             <Form.Group className="mb-3">
-              <Form.Label>Phone Number</Form.Label>
+              <Form.Label>Phone Number*</Form.Label>
               <Form.Control
                 type="tel"
                 value={customerInfo.phone}
@@ -415,11 +490,16 @@ const Billing = () => {
           <Button
             variant="secondary"
             onClick={() => setShowCheckoutModal(false)}
+            disabled={processingCheckout}
           >
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleCheckout}>
-            Complete Order
+          <Button
+            variant="primary"
+            onClick={handleCheckout}
+            disabled={processingCheckout}
+          >
+            {processingCheckout ? "Processing..." : "Complete Order"}
           </Button>
         </Modal.Footer>
       </Modal>

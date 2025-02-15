@@ -707,12 +707,10 @@ const Stock = () => {
                         })
                       }
                     />
-                   
                   </Form.Group>
                 </Col>
                 <Col xs={3}>
                   <Form.Group controlId="formProductImage">
-                  
                     {formData.productImage &&
                       typeof formData.productImage === "string" && (
                         <div className="mt-2">
@@ -729,6 +727,23 @@ const Stock = () => {
               <Button variant="primary" type="submit" className="mt-3">
                 Update Product
               </Button>
+              <Button
+                variant="warning"
+                type="button"
+                onClick={handleArchiveProduct}
+                className="ms-4 me-4 mt-3"
+              >
+                {formData.archived ? "Unarchive" : "Archive"}
+              </Button>
+              <Button
+                variant="danger"
+                type="button"
+                onClick={handlePermanentDelete}
+                className="me-2 mt-3"
+              >
+                Delete
+              </Button>
+              <div></div>
             </Form>
           </Modal.Body>
         </Modal>
@@ -750,7 +765,7 @@ const Stock = () => {
                     <p>
                       <span>{product.productName}</span>
                     </p>
-                    <p className="mt-4">MRP: {product.mrp}</p>
+                    <p className="">MRP: {product.mrp}</p>
                     <p>Bulk Price: {product.wholesalePrice}</p>
                   </div>
                 </div>
@@ -806,50 +821,6 @@ const Stock = () => {
           </div>
         )}
         {/* Styles */}
-        <style jsx>{`
-          .product-flex-container {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: flex-start;
-            gap: 7px;
-          }
-          .product-card {
-            flex: 1 1 120px;
-            width: 120px;
-            max-width: 160px;
-            height: 150px;
-            position: relative;
-            background-size: 100%;
-            background-repeat: no-repeat;
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: rgba(14, 30, 37, 0.12) 0px 2px 4px 0px,
-              rgba(14, 30, 37, 0.32) 0px 2px 16px 0px;
-            display: flex;
-            align-items: flex-start;
-            color: white;
-            cursor: pointer;
-          }
-          .details {
-            height: 100%;
-            color: white;
-            background-color: rgba(58, 62, 70, 0.68);
-            width: 100%;
-          }
-          .archived {
-            opacity: 0.7;
-          }
-          .archived-badge {
-            background-color: #dc3545;
-            color: white;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 0.8em;
-            position: absolute;
-            top: 5px;
-            right: 5px;
-          }
-        `}</style>
       </div>
     </>
   );
