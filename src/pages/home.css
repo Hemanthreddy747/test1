@@ -1,11 +1,24 @@
-.billing-history-container {
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  min-height: calc(100vh - 100px);
+.sync-status-alert {
+  margin-bottom: 20px;
+  padding: 10px 15px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
+.badge {
+  padding: 6px 10px;
+  border-radius: 4px;
+}
 
+.billing-history-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.modal-body table {
+  font-size: 0.9rem;
+}
 
 .btn:disabled {
   cursor: not-allowed;

@@ -34,6 +34,78 @@ const Billing = () => {
     email: "",
     address: "",
   });
+  const [syncStatus, setSyncStatus] = useState('synced'); // 'synced', 'pending', 'error'
+  const [pendingOrders, setPendingOrders] = useState([]);
+
+  // Load pending orders from localStorage on component mount
+  useEffect(() => {
+    const stored = localStorage.getItem('pendingOrders');
+    if (stored) {
+      setPendingOrders(JSON.parse(stored));
+      setSyncStatus('pending');
+    }
+  }, []);
+
+  // Background sync function
+  const syncPendingOrders = async () => {
+    if (!navigator.onLine || !userUID) return;
+
+    const stored = localStorage.getItem('pendingOrders');
+    if (!stored) return;
+
+    const orders = JSON.parse(stored);
+    if (orders.length === 0) return;
+
+    setSyncStatus('pending');
+
+    for (const order of orders) {
+      try {
+        const batch = writeBatch(db);
+        
+        // Create order document
+        const orderRef = doc(collection(db, "users", userUID, "orders"));
+        batch.set(orderRef, {
+          ...order,
+          syncedAt: serverTimestamp()
+        });
+
+        // Update product quantities
+        order.items.forEach((item) => {
+          const productRef = doc(db, "users", userUID, "products", item.id);
+          batch.update(productRef, {
+            stockQty: increment(-item.quantity),
+          });
+        });
+
+        await batch.commit();
+        
+        // Remove synced order from pending list
+        setPendingOrders(prev => prev.filter(o => o.localId !== order.localId));
+        localStorage.setItem('pendingOrders', JSON.stringify(
+          pendingOrders.filter(o => o.localId !== order.localId)
+        ));
+        
+        notifySuccess(`Order ${order.localId} synced successfully`);
+      } catch (error) {
+        console.error("Error syncing order:", error);
+        setSyncStatus('error');
+      }
+    }
+
+    if (pendingOrders.length === 0) {
+      setSyncStatus('synced');
+    }
+  };
+
+  // Add online/offline detection
+  useEffect(() => {
+    const handleOnline = () => {
+      syncPendingOrders();
+    };
+
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [userUID, pendingOrders]);
 
   const notifySuccess = (message) => toast.success(message);
   const notifyError = (message) => toast.error(message);
@@ -94,9 +166,16 @@ const Billing = () => {
   }, [fetchProducts]);
 
   const addToCart = useCallback((product) => {
+    // Check if product has zero or negative stock
+    if (product.stockQty <= 0) {
+      notifyError("Product is out of stock");
+      return;
+    }
+
     setCart((prevCart) => {
       const existingItem = prevCart.find((item) => item.id === product.id);
       if (existingItem) {
+        // Check if adding one more would exceed available stock
         if (existingItem.quantity >= product.stockQty) {
           notifyError("Cannot add more than available stock");
           return prevCart;
@@ -168,40 +247,49 @@ const Billing = () => {
 
     setProcessingCheckout(true);
     try {
-      const batch = writeBatch(db);
-
-      // Create order document reference
-      const orderRef = doc(collection(db, "users", userUID, "orders"));
-
-      // Prepare order data with cleaned cart items (removing productImage)
+      // Prepare order data
       const cleanedCartItems = cart.map((item) => {
         const { productImage, ...cleanedItem } = item;
         return cleanedItem;
       });
 
       const orderData = {
+        localId: Date.now().toString(), // Unique local ID
         customerInfo,
         items: cleanedCartItems,
         total: calculateTotal(),
-        timestamp: serverTimestamp(),
-        status: "completed",
+        timestamp: new Date().toISOString(),
+        status: "pending",
+        createdOffline: !navigator.onLine
       };
 
-      // Add order to batch
-      batch.set(orderRef, orderData);
+      // Store in pending orders
+      const updatedPendingOrders = [...pendingOrders, orderData];
+      setPendingOrders(updatedPendingOrders);
+      localStorage.setItem('pendingOrders', JSON.stringify(updatedPendingOrders));
 
-      // Update product quantities in the same batch
-      cart.forEach((item) => {
-        const productRef = doc(db, "users", userUID, "products", item.id);
-        batch.update(productRef, {
-          stockQty: increment(-item.quantity),
-        });
+      // Update local product quantities
+      const updatedProducts = products.map(product => {
+        const cartItem = cart.find(item => item.id === product.id);
+        if (cartItem) {
+          return {
+            ...product,
+            stockQty: product.stockQty - cartItem.quantity
+          };
+        }
+        return product;
       });
+      setProducts(updatedProducts);
 
-      // Commit all changes in a single batch
-      await batch.commit();
+      // Try to sync if online
+      if (navigator.onLine) {
+        syncPendingOrders();
+      } else {
+        setSyncStatus('pending');
+        notifySuccess("Order saved offline. Will sync when online.");
+      }
 
-      notifySuccess("Order completed successfully");
+      // Clear cart and form
       setCart([]);
       setCustomerInfo({
         name: "",
@@ -210,7 +298,6 @@ const Billing = () => {
         address: "",
       });
       setShowCheckoutModal(false);
-      fetchProducts(userUID);
     } catch (error) {
       console.error("Error processing checkout:", error);
       notifyError("Error processing checkout");
@@ -225,12 +312,19 @@ const Billing = () => {
         product.productName.toLowerCase().includes(searchTerm.toLowerCase())
       )
       .sort((a, b) => {
+        // First, sort by stock status (in stock products first)
+        if ((a.stockQty <= 0) !== (b.stockQty <= 0)) {
+          return a.stockQty <= 0 ? 1 : -1;
+        }
+        
+        // Then apply the selected sort option
         switch (sortOption) {
           case "name":
             return a.productName.localeCompare(b.productName);
           case "price":
             return a.retailPrice - b.retailPrice;
           default:
+            // If no sort option, still maintain in-stock items at top
             return 0;
         }
       });
@@ -266,14 +360,15 @@ const Billing = () => {
               <div
                 className={`product-card ${
                   getQuantityInCart(product.id) > 0 ? "has-items" : ""
-                }`}
+                } ${product.stockQty <= 0 ? "out-of-stock" : ""}`}
                 key={product.id}
                 style={{
                   backgroundImage: product.productImage
                     ? `url(${product.productImage})`
                     : "url(https://via.placeholder.com/150)",
+                  cursor: product.stockQty <= 0 ? "not-allowed" : "pointer",
                 }}
-                onClick={() => addToCart(product)}
+                onClick={() => product.stockQty > 0 && addToCart(product)}
               >
                 {getQuantityInCart(product.id) > 0 && (
                   <>
@@ -461,6 +556,23 @@ const Billing = () => {
           </Button>
         </Modal.Footer>
       </Modal>
+      <div className="sync-status-indicator">
+        {syncStatus === 'pending' && (
+          <span className="text-warning">
+            ⚠️ {pendingOrders.length} orders pending sync
+          </span>
+        )}
+        {syncStatus === 'error' && (
+          <span className="text-danger">
+            ❌ Sync error
+          </span>
+        )}
+        {syncStatus === 'synced' && (
+          <span className="text-success">
+            ✓ All orders synced
+          </span>
+        )}
+      </div>
     </>
   );
 };
