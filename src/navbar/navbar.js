@@ -13,8 +13,7 @@ const Navbar = () => {
   }, [location]);
 
   const handleTabClick = (tabName) => {
-    // setActiveTab(tabName);
-    navigate(`/${tabName}`);
+    navigate(`/${tabName}`, { replace: true });
   };
 
   return (
