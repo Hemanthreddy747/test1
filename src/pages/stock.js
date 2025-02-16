@@ -75,6 +75,7 @@ const Stock = () => {
 
     try {
       const productsRef = collection(db, "users", uid, "products");
+      // Add where clause to filter out archived products if needed
       const q = query(productsRef, limit(50));
       const querySnapshot = await getDocs(q);
       let productsList = querySnapshot.docs.map((doc) => ({
@@ -82,62 +83,41 @@ const Stock = () => {
         ...doc.data(),
       }));
 
-      // Fetch images for products
-      const imagePromises = productsList.map(async (product) => {
-        if (!product.productId) return;
+      // Clear image cache if it's a force refresh
+      if (forceRefresh) {
+        localStorage.removeItem("productImages");
+      }
 
-        // Check local cache first
-        const cachedImages = JSON.parse(
-          localStorage.getItem("productImages") || "{}"
-        );
-        if (cachedImages[product.productId]) {
-          return {
-            productId: product.productId,
-            images: cachedImages[product.productId],
-          };
-        }
-
-        // If not in cache, fetch from Firestore
-        const imagesRef = collection(db, "users", uid, "productImages");
-        const imagesQuery = query(
-          imagesRef,
-          where("productId", "==", product.productId)
-        );
-        const imagesSnapshot = await getDocs(imagesQuery);
-        const images = imagesSnapshot.docs.map((doc) => doc.data());
-
-        // Update cache
-        cachedImages[product.productId] = images;
-        localStorage.setItem("productImages", JSON.stringify(cachedImages));
-
-        return {
-          productId: product.productId,
-          images,
-        };
-      });
-
-      const imageResults = await Promise.all(imagePromises);
-      const cachedImages = {};
-      imageResults.forEach((result) => {
-        if (result) {
-          cachedImages[result.productId] = result.images;
+      // Batch fetch images for better performance
+      const imagesRef = collection(db, "users", uid, "productImages");
+      const imagesSnapshot = await getDocs(imagesRef);
+      const imageMap = {};
+      
+      // Create a map of productId to image data
+      imagesSnapshot.docs.forEach((doc) => {
+        const imageData = doc.data();
+        if (imageData.productId && imageData.productImage) {
+          imageMap[imageData.productId] = imageData.productImage;
         }
       });
+
+      // Update local cache with new image data
+      localStorage.setItem("productImages", JSON.stringify(imageMap));
 
       // Attach images to products
-      productsList.forEach((product) => {
-        if (product.productId && cachedImages[product.productId]) {
-          product.productImage =
-            cachedImages[product.productId][0]?.productImage;
-        }
-      });
+      productsList = productsList.map(product => ({
+        ...product,
+        productImage: product.productId ? imageMap[product.productId] : null
+      }));
 
+      // Update state based on loadMore and forceRefresh flags
       setProducts((prev) =>
         loadMore && !forceRefresh ? [...prev, ...productsList] : productsList
       );
+
     } catch (error) {
-      notifyError("Error fetching products");
       console.error("Fetch products error:", error);
+      notifyError("Error fetching products");
     } finally {
       setLoading(false);
     }

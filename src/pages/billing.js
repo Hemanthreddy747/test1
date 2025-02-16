@@ -51,53 +51,26 @@ const Billing = () => {
         ...doc.data(),
       }));
 
-      // Fetch images for products
-      const imagePromises = productsList.map(async (product) => {
-        if (!product.productId) return;
-
-        // Check local cache first
-        const cachedImages = JSON.parse(
-          localStorage.getItem("productImages") || "{}"
-        );
-        if (cachedImages[product.productId]) {
-          return {
-            productId: product.productId,
-            images: cachedImages[product.productId],
-          };
-        }
-
-        // If not in cache, fetch from Firestore
-        const imagesRef = collection(db, "users", uid, "productImages");
-        const imagesQuery = query(
-          imagesRef,
-          where("productId", "==", product.productId)
-        );
-        const imagesSnapshot = await getDocs(imagesQuery);
-        const images = imagesSnapshot.docs.map((doc) => doc.data());
-
-        // Update cache
-        cachedImages[product.productId] = images;
-        localStorage.setItem("productImages", JSON.stringify(cachedImages));
-
-        return {
-          productId: product.productId,
-          images,
-        };
-      });
-
-      const imageResults = await Promise.all(imagePromises);
-      const cachedImages = {};
-      imageResults.forEach((result) => {
-        if (result) {
-          cachedImages[result.productId] = result.images;
+      // Batch fetch all images at once
+      const imagesRef = collection(db, "users", uid, "productImages");
+      const imagesSnapshot = await getDocs(imagesRef);
+      const imageMap = {};
+      
+      // Create a map of productId to image data
+      imagesSnapshot.docs.forEach((doc) => {
+        const imageData = doc.data();
+        if (imageData.productId && imageData.productImage) {
+          imageMap[imageData.productId] = imageData.productImage;
         }
       });
+
+      // Update local cache with new image data
+      localStorage.setItem("productImages", JSON.stringify(imageMap));
 
       // Attach images to products
-      productsList = productsList.map((product) => ({
+      productsList = productsList.map(product => ({
         ...product,
-        productImage:
-          product.productId && cachedImages[product.productId]?.[0]?.productImage,
+        productImage: product.productId ? imageMap[product.productId] : null
       }));
 
       setProducts(productsList);
