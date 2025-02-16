@@ -12,7 +12,7 @@ import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import "./login.css";
 import logo from "../assets/images/company-logo.jpg"; // Adjust the path as necessary
-import googlelogo from "../assets/icons/googlelogo.svg"; // Adjust the path as necessary
+import googlelogo from "../assets/Icons/googlelogo.svg"; // Adjust the path as necessary
 import LoaderC from "../utills/loaderC";
 
 const Login = () => {

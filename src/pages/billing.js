@@ -38,58 +38,6 @@ const Billing = () => {
   const notifySuccess = (message) => toast.success(message);
   const notifyError = (message) => toast.error(message);
 
-  const cacheProductImages = useCallback(async (uid) => {
-    if (!uid) return;
-    try {
-      const cachedImages = JSON.parse(
-        localStorage.getItem("productImages") || "{}"
-      );
-      const imageCache = { ...cachedImages };
-
-      const productsRef = collection(db, "users", uid, "products");
-      const q = query(productsRef, where("archived", "==", false), limit(50));
-      const querySnapshot = await getDocs(q);
-      const products = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
-      const uncachedProducts = products.filter(
-        (product) => !imageCache[product.productId]
-      );
-
-      if (uncachedProducts.length > 0) {
-        const imagesRef = collection(db, "users", uid, "productImages");
-        const imagesPromises = uncachedProducts.map(async (product) => {
-          if (!product.productId) return null;
-          const imagesQuery = query(
-            imagesRef,
-            where("productId", "==", product.productId)
-          );
-          const imagesSnapshot = await getDocs(imagesQuery);
-          return {
-            productId: product.productId,
-            images: imagesSnapshot.docs.map((doc) => doc.data()),
-          };
-        });
-
-        const results = await Promise.all(imagesPromises);
-        results.forEach((result) => {
-          if (result) {
-            imageCache[result.productId] = result.images;
-          }
-        });
-
-        localStorage.setItem("productImages", JSON.stringify(imageCache));
-      }
-
-      return imageCache;
-    } catch (error) {
-      console.error("Error caching product images:", error);
-      return {};
-    }
-  }, []);
-
   const fetchProducts = useCallback(async (uid) => {
     if (!uid) return;
     setLoading(true);
@@ -98,20 +46,59 @@ const Billing = () => {
       const productsRef = collection(db, "users", uid, "products");
       const q = query(productsRef, where("archived", "==", false), limit(50));
       const querySnapshot = await getDocs(q);
+      let productsList = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
 
-      const cachedImages = JSON.parse(
-        localStorage.getItem("productImages") || "{}"
-      );
+      // Fetch images for products
+      const imagePromises = productsList.map(async (product) => {
+        if (!product.productId) return;
 
-      const productsList = querySnapshot.docs.map((doc) => {
-        const data = doc.data();
+        // Check local cache first
+        const cachedImages = JSON.parse(
+          localStorage.getItem("productImages") || "{}"
+        );
+        if (cachedImages[product.productId]) {
+          return {
+            productId: product.productId,
+            images: cachedImages[product.productId],
+          };
+        }
+
+        // If not in cache, fetch from Firestore
+        const imagesRef = collection(db, "users", uid, "productImages");
+        const imagesQuery = query(
+          imagesRef,
+          where("productId", "==", product.productId)
+        );
+        const imagesSnapshot = await getDocs(imagesQuery);
+        const images = imagesSnapshot.docs.map((doc) => doc.data());
+
+        // Update cache
+        cachedImages[product.productId] = images;
+        localStorage.setItem("productImages", JSON.stringify(cachedImages));
+
         return {
-          id: doc.id,
-          ...data,
-          productImage:
-            data.productId && cachedImages[data.productId]?.[0]?.productImage,
+          productId: product.productId,
+          images,
         };
       });
+
+      const imageResults = await Promise.all(imagePromises);
+      const cachedImages = {};
+      imageResults.forEach((result) => {
+        if (result) {
+          cachedImages[result.productId] = result.images;
+        }
+      });
+
+      // Attach images to products
+      productsList = productsList.map((product) => ({
+        ...product,
+        productImage:
+          product.productId && cachedImages[product.productId]?.[0]?.productImage,
+      }));
 
       setProducts(productsList);
     } catch (error) {
@@ -127,13 +114,11 @@ const Billing = () => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         setUserUID(user.uid);
-        cacheProductImages(user.uid).then(() => {
-          fetchProducts(user.uid);
-        });
+        fetchProducts(user.uid);
       }
     });
     return () => unsubscribe();
-  }, [fetchProducts, cacheProductImages]);
+  }, [fetchProducts]);
 
   const addToCart = useCallback((product) => {
     setCart((prevCart) => {
